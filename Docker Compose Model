@@ -1,0 +1,84 @@
+version: '3'
+services:
+  diagnoze-db:
+    container_name: ${CONTAINER_DB_NAME}
+    image: ${DB-IMAGE:-mariadb}:${DB_VERSION:-latest}
+    restart: unless-stopped
+    volumes:
+      - ${DB_FILES}:/var/lib/mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+
+  diagnoze-wordpress:
+    depends_on:
+      - diagnoze-db
+    container_name: ${CONTAINER_SITE_NAME}
+    #image: ${SITE_IMAGE:-wordpress}:${SITE_VERSION:-latest}
+    build:
+      context: ${DOCKERFILE_CONTEXT}
+      dockerfile: ${DOCKERFILE_NAME}
+    restart: unless-stopped
+    volumes:
+      - ${SITE_FILES}:/var/www/html
+      - ${PHP_INI}:/usr/local/etc/php/conf.d/php.ini
+      #- ./php-fpm.conf:/usr/local/etc/php/php-fpm.conf
+      - ./www.conf:/usr/local/etc/php/php-fpm.d/www.conf
+    environment:
+      WORDPRESS_DB_HOST: ${CONTAINER_DB_NAME}
+      #WORDPRESS_DB_HOST: 19.0.0.2:3306
+      WORDPRESS_DB_NAME: ${MYSQL_DATABASE}
+      WORDPRESS_DB_USER: ${MYSQL_USER}
+      WORDPRESS_DB_PASSWORD: ${MYSQL_PASSWORD}
+      WORDPRESS_TABLE_PREFIX: ${WORDPRESS_TABLE_PREFIX}
+    logging:
+      options:
+        max-size: ${LOGGING_OPTIONS_MAX_SIZE:-200k}
+    links:
+      - diagnoze-db
+    
+  diagnoze-nginx:
+    image: nginx:alpine
+    container_name: diagnoze-nginx
+    restart: unless-stopped
+ #   tmpfs:
+ #     - /tmp/cache
+    volumes:
+      - proxy_cache:/tmp/cache
+      - fastcgi_cache:/tmp/cache/proxy
+      - ${NGINX_CONFIG}:/etc/nginx/conf.d 
+      - ${NGINX_MY_INCLUDE_FILES}:/etc/nginx/my_include_files
+      - ${SITE_FILES}:/var/www/html
+      - ./server.conf:/etc/nginx/nginx.conf
+    expose:
+      - "80"
+    #ports:
+    #  - "8080:80"
+    links:
+      - diagnoze-wordpress
+    environment:
+      - VIRTUAL_HOST=${DOMAIN},www.${DOMAIN}
+      #- LETSENCRYPT_HOST=${DOMAIN},www.${DOMAIN}
+      #- LETSENCRYPT_EMAIL=${LETSENCRYPT_EMAIL}
+  
+  
+  blog-redis:
+    container_name: blog-redis
+    image: redis:alpine3.16
+    restart: always
+
+volumes:
+  proxy_cache:
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+
+  fastcgi_cache:
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+networks:
+  default:
+    name: dockers
